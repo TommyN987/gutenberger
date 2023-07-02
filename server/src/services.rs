@@ -43,7 +43,7 @@ pub async fn get_top_ten_books(pool: web::Data<PgPool>) -> impl Responder {
             subjects ON books_subjects.subject_id = subjects.subject_id
         ORDER BY 
             books.downloads DESC
-        LIMIT 300;
+        LIMIT 160;
         "#,
     )
     .fetch_all(&**pool)
@@ -65,7 +65,7 @@ pub async fn get_top_ten_books(pool: web::Data<PgPool>) -> impl Responder {
 
             let mut books_vec: Vec<Book> = books.into_iter().map(|(_, v)| v).collect();
             books_vec.sort_by(|a, b| b.downloads.cmp(&a.downloads));
-
+            println!("{:?}", books_vec.len());
             HttpResponse::Ok().json(books_vec)
         }
         Err(_) => HttpResponse::InternalServerError().body("Internal server error"),
