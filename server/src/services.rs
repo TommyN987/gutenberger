@@ -72,6 +72,73 @@ pub async fn get_top_ten_books(pool: web::Data<PgPool>) -> impl Responder {
     }
 }
 
+#[get("/books/{id}")]
+pub async fn get_book(pool: web::Data<PgPool>, path: web::Path<i64>) -> impl Responder {
+    let id = path.into_inner();
+    let res = sqlx::query_as!(
+        Record,
+        r#"
+        SELECT
+            books.book_id,
+            books.title,
+            books.content_url,
+            books.downloads,
+            books.category,
+            books.cover_image_url_medium,
+            books.cover_image_url_small,
+            languages.language_name,
+            authors.author_name,
+            authors.year_of_birth,
+            authors.year_of_death,
+            subjects.subject_name,
+            bookshelves.shelf_name
+        FROM 
+            books
+        INNER JOIN
+            books_authors ON books.book_id = books_authors.book_id
+        INNER JOIN
+            authors ON books_authors.author_id = authors.author_id
+        INNER JOIN
+			languages ON books.language_id = languages.language_id
+        LEFT JOIN
+			books_bookshelves as bookshelves_bridge ON books.book_id = bookshelves_bridge.book_id
+		LEFT JOIN
+			bookshelves ON bookshelves_bridge.shelf_id = bookshelves.shelf_id
+        LEFT JOIN
+            books_subjects ON books.book_id = books_subjects.book_id
+        LEFT JOIN
+            subjects ON books_subjects.subject_id = subjects.subject_id
+        WHERE books.book_id = $1;
+        "#,
+        id
+    )
+    .fetch_all(&**pool)
+    .await;
+
+    match res {
+        Ok(res) => {
+            let mut books: HashMap<i64, Book> = HashMap::new();
+            for record in res {
+                books
+                    .entry(record.book_id)
+                    .and_modify(|book| {
+                        add_author(&record, book);
+                        add_subject(&record, book);
+                        add_bookshelf(&record, book);
+                    })
+                    .or_insert_with(|| Book::new(&record));
+            }
+
+            let books_vec: Vec<Book> = books.into_iter().map(|(_, v)| v).collect();
+            match books_vec.get(0) {
+                Some(first_book) => HttpResponse::Ok().json(first_book),
+                None => HttpResponse::NotFound().body("No book found"),
+            }
+        }
+        Err(_) => HttpResponse::InternalServerError().body("Internal server error"),
+    }
+}
+
 fn add_author(record: &Record, book: &mut Book) {
     let author = Author {
         author_name: record.author_name.clone(),

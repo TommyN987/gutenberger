@@ -1,6 +1,6 @@
 use actix_web::{web::Data, App, HttpServer};
 use dotenv::dotenv;
-use services::get_top_ten_books;
+use services::{get_book, get_top_ten_books};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
 mod services;
@@ -23,6 +23,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(Data::new(pool.clone()))
             .service(get_top_ten_books)
+            .service(get_book)
     })
     .bind(("127.0.0.1", 8080))?
     .run()

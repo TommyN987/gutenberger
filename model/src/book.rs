@@ -36,7 +36,7 @@ pub struct Bookshelf {
     pub shelf_name: String,
 }
 
-#[derive(Deserialize, Serialize, FromRow, Debug)]
+#[derive(Deserialize, Serialize, FromRow, Default, Debug)]
 pub struct Book {
     pub book_id: i64,
     pub authors: Option<Vec<Author>>,
