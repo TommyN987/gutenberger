@@ -28,12 +28,12 @@ pub struct Author {
 
 #[derive(Deserialize, Serialize, PartialEq, Clone, FromRow, Debug)]
 pub struct Subject {
-    pub subject_name: String,
+    pub subject_name: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Clone, FromRow, Debug)]
 pub struct Bookshelf {
-    pub shelf_name: String,
+    pub shelf_name: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, FromRow, Default, Debug)]
@@ -64,7 +64,7 @@ impl Book {
         let mut subjects = None;
         if let Some(subject_name) = &record.subject_name {
             let subject = Subject {
-                subject_name: subject_name.clone(),
+                subject_name: Some(subject_name.clone()),
             };
             add_to_vec(&mut subjects, subject);
         }
@@ -72,7 +72,7 @@ impl Book {
         let mut bookshelves = None;
         if let Some(shelf_name) = &record.shelf_name {
             let shelf = Bookshelf {
-                shelf_name: shelf_name.clone(),
+                shelf_name: Some(shelf_name.clone()),
             };
             add_to_vec(&mut bookshelves, shelf);
         }
