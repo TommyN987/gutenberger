@@ -4,7 +4,6 @@ use model::book::{Author, Book, Bookshelf, Subject};
 use model::utils;
 
 use actix_web::{get, web, HttpResponse, Responder};
-use serde_json::from_str;
 use sqlx::PgPool;
 
 #[get("/")]
@@ -93,273 +92,444 @@ pub async fn get_top_ten_books(pool: web::Data<PgPool>) -> impl Responder {
 
             HttpResponse::Ok().json(books)
         }
-        Err(e) => {
-            println!("Error: {:?}", e);
-            HttpResponse::InternalServerError().body("Error occurred")
-        }
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error occurred{:?}", e)),
     }
 }
 
-// #[get("/")]
-// pub async fn get_top_ten_books(pool: web::Data<PgPool>) -> impl Responder {
-//     let res = sqlx::query_as!(
-//         Record,
-//         r#"
-//         SELECT
-//             books.book_id,
-//             books.title,
-//             books.content_url,
-//             books.downloads,
-//             books.category,
-//             books.cover_image_url_medium,
-//             books.cover_image_url_small,
-//             languages.language_name,
-//             authors.author_name,
-//             authors.year_of_birth,
-//             authors.year_of_death,
-//             subjects.subject_name,
-//             bookshelves.shelf_name
-//         FROM
-//             books
-//         INNER JOIN
-//             books_authors ON books.book_id = books_authors.book_id
-//         INNER JOIN
-//             authors ON books_authors.author_id = authors.author_id
-//         INNER JOIN
-// 			languages ON books.language_id = languages.language_id
-//         LEFT JOIN
-// 			books_bookshelves as bookshelves_bridge ON books.book_id = bookshelves_bridge.book_id
-// 		LEFT JOIN
-// 			bookshelves ON bookshelves_bridge.shelf_id = bookshelves.shelf_id
-//         LEFT JOIN
-//             books_subjects ON books.book_id = books_subjects.book_id
-//         LEFT JOIN
-//             subjects ON books_subjects.subject_id = subjects.subject_id
-//         ORDER BY
-//             books.downloads DESC
-//         LIMIT 160;
-//         "#,
-//     )
-//     .fetch_all(&**pool)
-//     .await;
+#[get("/books/{id}")]
+pub async fn get_book(pool: web::Data<PgPool>, path: web::Path<i64>) -> impl Responder {
+    let id = path.into_inner();
+    let res = sqlx::query!(
+        r#"
+        SELECT
+            books.book_id,
+            books.title,
+            books.content_url,
+            books.downloads,
+            books.category,
+            books.cover_image_url_medium,
+            books.cover_image_url_small,
+            languages.language_name,
+            COALESCE(
+                (SELECT json_agg(json_build_object('author_id', authors.author_id, 'author_name', authors.author_name, 'year_of_birth', authors.year_of_birth, 'year_of_death', authors.year_of_death)) 
+                FROM books_authors 
+                INNER JOIN authors ON books_authors.author_id = authors.author_id 
+                WHERE books.book_id = books_authors.book_id), '[]') AS authors,
+            COALESCE(
+                (SELECT json_agg(json_build_object('subject_id', s.subject_id, 'subject_name', s.subject_name)) 
+                FROM 
+                    (SELECT DISTINCT subjects.subject_id, subjects.subject_name 
+                    FROM books_subjects 
+                    INNER JOIN subjects ON books_subjects.subject_id = subjects.subject_id 
+                    WHERE books.book_id = books_subjects.book_id) AS s), '[]') AS subjects,
+            COALESCE(
+                (SELECT json_agg(json_build_object('shelf_id', b.shelf_id, 'shelf_name', b.shelf_name)) 
+                FROM 
+                    (SELECT DISTINCT bookshelves.shelf_id, bookshelves.shelf_name 
+                    FROM books_bookshelves 
+                    INNER JOIN bookshelves ON books_bookshelves.shelf_id = bookshelves.shelf_id 
+                    WHERE books.book_id = books_bookshelves.book_id) AS b), '[]') AS bookshelves
+        FROM 
+            books
+        INNER JOIN
+            languages ON books.language_id = languages.language_id
+        WHERE book_id = $1
+        GROUP BY
+            books.book_id,
+            languages.language_name;
+        "#, id
+    ).fetch_one(&**pool).await;
 
-//     match res {
-//         Ok(res) => {
-//             let books = parse_book_records_response(res);
+    match res {
+        Ok(res) => {
+            println!("{:?}", res);
+            let subjects_json = res
+                .subjects
+                .as_ref()
+                .map_or(String::from("[]"), |jv| jv.to_string());
+            let subjects: Vec<Subject> = serde_json::from_str(&subjects_json).unwrap();
 
-//             let mut books_vec: Vec<Book> = books.into_iter().map(|(_, v)| v).collect();
-//             books_vec.sort_by(|a, b| b.downloads.cmp(&a.downloads));
-//             HttpResponse::Ok().json(books_vec)
-//         }
-//         Err(_) => HttpResponse::InternalServerError().body("Internal server error"),
-//     }
-// }
+            let bookshelves_json = res
+                .bookshelves
+                .as_ref()
+                .map_or(String::from("[]"), |jv| jv.to_string());
+            let bookshelves: Vec<Bookshelf> = serde_json::from_str(&bookshelves_json).unwrap();
 
-// #[get("/books/{id}")]
-// pub async fn get_book(pool: web::Data<PgPool>, path: web::Path<i64>) -> impl Responder {
-//     let id = path.into_inner();
-//     let res = sqlx::query_as!(
-//         Record,
-//         r#"
-//         SELECT
-//             books.book_id,
-//             books.title,
-//             books.content_url,
-//             books.downloads,
-//             books.category,
-//             books.cover_image_url_medium,
-//             books.cover_image_url_small,
-//             languages.language_name,
-//             authors.author_name,
-//             authors.year_of_birth,
-//             authors.year_of_death,
-//             subjects.subject_name,
-//             bookshelves.shelf_name
-//         FROM
-//             books
-//         INNER JOIN
-//             books_authors ON books.book_id = books_authors.book_id
-//         INNER JOIN
-//             authors ON books_authors.author_id = authors.author_id
-//         INNER JOIN
-// 			languages ON books.language_id = languages.language_id
-//         LEFT JOIN
-// 			books_bookshelves as bookshelves_bridge ON books.book_id = bookshelves_bridge.book_id
-// 		LEFT JOIN
-// 			bookshelves ON bookshelves_bridge.shelf_id = bookshelves.shelf_id
-//         LEFT JOIN
-//             books_subjects ON books.book_id = books_subjects.book_id
-//         LEFT JOIN
-//             subjects ON books_subjects.subject_id = subjects.subject_id
-//         WHERE books.book_id = $1;
-//         "#,
-//         id
-//     )
-//     .fetch_all(&**pool)
-//     .await;
+            let authors_json = res
+                .authors
+                .as_ref()
+                .map_or(String::from("[]"), |jv| jv.to_string());
+            let authors: Vec<Author> = serde_json::from_str(&authors_json).unwrap();
 
-//     match res {
-//         Ok(res) => {
-//             let books = parse_book_records_response(res);
+            let book = Book {
+                book_id: res.book_id,
+                authors,
+                title: res.title.unwrap_or_default(),
+                language: res.language_name.unwrap_or_default(),
+                downloads: res.downloads.unwrap_or_default(),
+                bookshelves: Some(bookshelves),
+                subjects: Some(subjects),
+                category: res.category.unwrap_or_default(),
+                content_url: res.content_url,
+                cover_image_url_small: res.cover_image_url_small,
+                cover_image_url_medium: res.cover_image_url_medium,
+            };
 
-//             let books_vec: Vec<Book> = books.into_iter().map(|(_, v)| v).collect();
-//             match books_vec.get(0) {
-//                 Some(first_book) => HttpResponse::Ok().json(first_book),
-//                 None => HttpResponse::NotFound().body("No book found"),
-//             }
-//         }
-//         Err(_) => HttpResponse::InternalServerError().body("Internal server error"),
-//     }
-// }
+            HttpResponse::Ok().json(book)
+        }
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error occurred{:?}", e)),
+    }
+}
 
-// #[get("/subjects")]
-// pub async fn get_top_subjects(pool: web::Data<PgPool>) -> impl Responder {
-//     let res = sqlx::query_as!(
-//         Subject,
-//         r#"
-//         SELECT
-//             subject_name
-//         FROM
-//             subjects
-//         WHERE
-//             LENGTH(subject_name) > 2
-//         ORDER BY
-//             count_of_books DESC
-//         LIMIT 100;
-//         "#
-//     )
-//     .fetch_all(&**pool)
-//     .await;
+#[get("/subjects")]
+pub async fn get_top_subjects(pool: web::Data<PgPool>) -> impl Responder {
+    let res = sqlx::query!(
+        r#"
+        SELECT
+            subject_name,
+            subject_id
+        FROM
+            subjects
+        WHERE
+            LENGTH(subject_name) > 2
+        ORDER BY
+            count_of_books DESC
+        LIMIT 100;
+        "#
+    )
+    .fetch_all(&**pool)
+    .await;
 
-//     match res {
-//         Ok(res) => HttpResponse::Ok().json(res),
-//         Err(_) => HttpResponse::InternalServerError().body("Internal service error"),
-//     }
-// }
+    match res {
+        Ok(res) => {
+            let subjects: Vec<Subject> = res
+                .into_iter()
+                .map(|s| Subject {
+                    subject_id: s.subject_id,
+                    subject_name: s.subject_name.unwrap_or_default(),
+                })
+                .collect();
+            HttpResponse::Ok().json(subjects)
+        }
+        Err(_) => HttpResponse::InternalServerError().body("Internal service error"),
+    }
+}
 
-// #[get("/bookshelves")]
-// pub async fn get_top_bookshelves(pool: web::Data<PgPool>) -> impl Responder {
-//     let res = sqlx::query_as!(
-//         Bookshelf,
-//         r#"
-//         SELECT
-//             shelf_name
-//         FROM
-//             bookshelves
-//         WHERE
-//             LENGTH(shelf_name) > 2
-//         ORDER BY
-//             count_of_books DESC
-//         LIMIT 100;
-//         "#
-//     )
-//     .fetch_all(&**pool)
-//     .await;
+#[get("/bookshelves")]
+pub async fn get_top_bookshelves(pool: web::Data<PgPool>) -> impl Responder {
+    let res = sqlx::query!(
+        r#"
+        SELECT
+            shelf_name,
+            shelf_id
+        FROM
+            bookshelves
+        WHERE
+            LENGTH(shelf_name) > 2
+        ORDER BY
+            count_of_books DESC
+        LIMIT 100;
+        "#
+    )
+    .fetch_all(&**pool)
+    .await;
 
-//     match res {
-//         Ok(res) => HttpResponse::Ok().json(res),
-//         Err(_) => HttpResponse::InternalServerError().body("Internal service error"),
-//     }
-// }
+    match res {
+        Ok(res) => {
+            let bookshelves: Vec<Bookshelf> = res
+                .into_iter()
+                .map(|s| Bookshelf {
+                    shelf_id: s.shelf_id,
+                    shelf_name: s.shelf_name.unwrap_or_default(),
+                })
+                .collect();
+            HttpResponse::Ok().json(bookshelves)
+        }
+        Err(_) => HttpResponse::InternalServerError().body("Internal service error"),
+    }
+}
 
-// #[get("/bookshelf/{shelf_name}")]
-// pub async fn get_books_from_bookshelf(
-//     pool: web::Data<PgPool>,
-//     path: web::Path<String>,
-// ) -> impl Responder {
-//     let shelf_name = path.into_inner();
-//     let res = sqlx::query_as!(
-//         Record,
-//         r#"
-//         SELECT
-//             books.book_id,
-//             books.title,
-//             books.content_url,
-//             books.downloads,
-//             books.category,
-//             books.cover_image_url_medium,
-//             books.cover_image_url_small,
-//             languages.language_name,
-//             authors.author_name,
-//             authors.year_of_birth,
-//             authors.year_of_death,
-//             subjects.subject_name,
-//             bookshelves.shelf_name
-//         FROM
-//             books
-//         INNER JOIN
-//             books_authors ON books.book_id = books_authors.book_id
-//         INNER JOIN
-//             authors ON books_authors.author_id = authors.author_id
-//         INNER JOIN
-// 			languages ON books.language_id = languages.language_id
-//         LEFT JOIN
-// 			books_bookshelves as bookshelves_bridge ON books.book_id = bookshelves_bridge.book_id
-// 		LEFT JOIN
-// 			bookshelves ON bookshelves_bridge.shelf_id = bookshelves.shelf_id
-//         LEFT JOIN
-//             books_subjects ON books.book_id = books_subjects.book_id
-//         LEFT JOIN
-//             subjects ON books_subjects.subject_id = subjects.subject_id
-//         WHERE bookshelves.shelf_name = $1;
-//         "#,
-//         shelf_name
-//     )
-//     .fetch_all(&**pool)
-//     .await;
+#[get("/bookshelves/{shelf_id}")]
+pub async fn get_books_from_bookshelf(
+    pool: web::Data<PgPool>,
+    path: web::Path<i32>,
+) -> impl Responder {
+    let shelf_id = path.into_inner();
+    let res = sqlx::query!(
+        r#"
+        SELECT
+        books.book_id,
+        books.title,
+        books.content_url,
+        books.downloads,
+        books.category,
+        books.cover_image_url_medium,
+        books.cover_image_url_small,
+        languages.language_name,
+        COALESCE(
+            (SELECT json_agg(json_build_object('author_id', authors.author_id, 'author_name', authors.author_name, 'year_of_birth', authors.year_of_birth, 'year_of_death', authors.year_of_death)) 
+            FROM books_authors 
+            INNER JOIN authors ON books_authors.author_id = authors.author_id 
+            WHERE books.book_id = books_authors.book_id), '[]') AS authors,
+        COALESCE(
+            (SELECT json_agg(json_build_object('subject_id', s.subject_id, 'subject_name', s.subject_name)) 
+            FROM 
+                (SELECT DISTINCT subjects.subject_id, subjects.subject_name 
+                FROM books_subjects 
+                INNER JOIN subjects ON books_subjects.subject_id = subjects.subject_id 
+                WHERE books.book_id = books_subjects.book_id) AS s), '[]') AS subjects,
+        COALESCE(
+            (SELECT json_agg(json_build_object('shelf_id', b.shelf_id, 'shelf_name', b.shelf_name)) 
+            FROM 
+                (SELECT DISTINCT bookshelves.shelf_id, bookshelves.shelf_name 
+                FROM books_bookshelves 
+                INNER JOIN bookshelves ON books_bookshelves.shelf_id = bookshelves.shelf_id 
+                WHERE books.book_id = books_bookshelves.book_id) AS b), '[]') AS bookshelves
+        FROM 
+            books
+        INNER JOIN
+            languages ON books.language_id = languages.language_id
+        INNER JOIN
+            books_bookshelves ON books.book_id = books_bookshelves.book_id
+        WHERE books_bookshelves.shelf_id = $1
+        GROUP BY
+            books.book_id,
+            languages.language_name
+        ORDER BY
+            books.downloads DESC;
+        "#, shelf_id
+    ).fetch_all(&**pool).await;
 
-//     match res {
-//         Ok(res) => {
-//             let books = parse_book_records_response(res);
+    match res {
+        Ok(rows) => {
+            let mut books: Vec<Book> = Vec::new();
 
-//             let books_vec: Vec<Book> = books.into_iter().map(|(_, v)| v).collect();
-//             match books_vec.get(0) {
-//                 Some(first_book) => HttpResponse::Ok().json(first_book),
-//                 None => HttpResponse::NotFound().body("No book found"),
-//             }
-//         }
-//         Err(_) => HttpResponse::InternalServerError().body("Internal server error"),
-//     }
-// }
+            for row in rows {
+                let subjects_json = row
+                    .subjects
+                    .as_ref()
+                    .map_or(String::from("[]"), |jv| jv.to_string());
+                let subjects: Vec<Subject> = serde_json::from_str(&subjects_json).unwrap();
 
-// fn parse_book_records_response(res: Vec<Record>) -> HashMap<i64, Book> {
-//     let mut books: HashMap<i64, Book> = HashMap::new();
-//     for record in res {
-//         books
-//             .entry(record.book_id)
-//             .and_modify(|book| {
-//                 add_author(&record, book);
-//                 add_subject(&record, book);
-//                 add_bookshelf(&record, book);
-//             })
-//             .or_insert_with(|| Book::new(&record));
-//     }
-//     books
-// }
+                let bookshelves_json = row
+                    .bookshelves
+                    .as_ref()
+                    .map_or(String::from("[]"), |jv| jv.to_string());
+                let bookshelves: Vec<Bookshelf> = serde_json::from_str(&bookshelves_json).unwrap();
 
-// fn add_author(record: &Record, book: &mut Book) {
-//     let author = Author {
-//         author_name: record.author_name.clone(),
-//         year_of_birth: record.year_of_birth,
-//         year_of_death: record.year_of_death,
-//     };
-//     utils::add_to_vec(&mut book.authors, author);
-// }
+                let authors_json = row
+                    .authors
+                    .as_ref()
+                    .map_or(String::from("[]"), |jv| jv.to_string());
+                let authors: Vec<Author> = serde_json::from_str(&authors_json).unwrap();
 
-// fn add_subject(record: &Record, book: &mut Book) {
-//     if let Some(subject_name) = &record.subject_name {
-//         let subject = Subject {
-//             subject_name: Some(subject_name.clone()),
-//         };
-//         utils::add_to_vec(&mut book.subjects, subject);
-//     }
-// }
+                let book = Book {
+                    book_id: row.book_id,
+                    authors,
+                    title: row.title.unwrap_or_default(),
+                    language: row.language_name.unwrap_or_default(),
+                    downloads: row.downloads.unwrap_or_default(),
+                    bookshelves: Some(bookshelves),
+                    subjects: Some(subjects),
+                    category: row.category.unwrap_or_default(),
+                    content_url: row.content_url,
+                    cover_image_url_small: row.cover_image_url_small,
+                    cover_image_url_medium: row.cover_image_url_medium,
+                };
+                books.push(book);
+            }
 
-// fn add_bookshelf(record: &Record, book: &mut Book) {
-//     if let Some(shelf_name) = &record.shelf_name {
-//         let shelf = Bookshelf {
-//             shelf_name: Some(shelf_name.clone()),
-//         };
-//         utils::add_to_vec(&mut book.bookshelves, shelf);
-//     }
-// }
+            HttpResponse::Ok().json(books)
+        }
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error occurred{:?}", e)),
+    }
+}
+
+#[get("/subjects/{subject_id}")]
+pub async fn get_books_of_subject(pool: web::Data<PgPool>, path: web::Path<i32>) -> impl Responder {
+    let subject_id = path.into_inner();
+    let res = sqlx::query!(
+        r#"
+        SELECT
+        books.book_id,
+        books.title,
+        books.content_url,
+        books.downloads,
+        books.category,
+        books.cover_image_url_medium,
+        books.cover_image_url_small,
+        languages.language_name,
+        COALESCE(
+            (SELECT json_agg(json_build_object('author_id', authors.author_id, 'author_name', authors.author_name, 'year_of_birth', authors.year_of_birth, 'year_of_death', authors.year_of_death)) 
+            FROM books_authors 
+            INNER JOIN authors ON books_authors.author_id = authors.author_id 
+            WHERE books.book_id = books_authors.book_id), '[]') AS authors,
+        COALESCE(
+            (SELECT json_agg(json_build_object('subject_id', s.subject_id, 'subject_name', s.subject_name)) 
+            FROM 
+                (SELECT DISTINCT subjects.subject_id, subjects.subject_name 
+                FROM books_subjects 
+                INNER JOIN subjects ON books_subjects.subject_id = subjects.subject_id 
+                WHERE books.book_id = books_subjects.book_id) AS s), '[]') AS subjects,
+        COALESCE(
+            (SELECT json_agg(json_build_object('shelf_id', b.shelf_id, 'shelf_name', b.shelf_name)) 
+            FROM 
+                (SELECT DISTINCT bookshelves.shelf_id, bookshelves.shelf_name 
+                FROM books_bookshelves 
+                INNER JOIN bookshelves ON books_bookshelves.shelf_id = bookshelves.shelf_id 
+                WHERE books.book_id = books_bookshelves.book_id) AS b), '[]') AS bookshelves
+        FROM 
+            books
+        INNER JOIN
+            languages ON books.language_id = languages.language_id
+        INNER JOIN
+            books_subjects ON books.book_id = books_subjects.book_id
+        WHERE books_subjects.subject_id = $1
+        GROUP BY
+            books.book_id,
+            languages.language_name
+        ORDER BY
+            books.downloads DESC;
+        "#, subject_id
+    ).fetch_all(&**pool).await;
+
+    match res {
+        Ok(rows) => {
+            let mut books: Vec<Book> = Vec::new();
+
+            for row in rows {
+                let subjects_json = row
+                    .subjects
+                    .as_ref()
+                    .map_or(String::from("[]"), |jv| jv.to_string());
+                let subjects: Vec<Subject> = serde_json::from_str(&subjects_json).unwrap();
+
+                let bookshelves_json = row
+                    .bookshelves
+                    .as_ref()
+                    .map_or(String::from("[]"), |jv| jv.to_string());
+                let bookshelves: Vec<Bookshelf> = serde_json::from_str(&bookshelves_json).unwrap();
+
+                let authors_json = row
+                    .authors
+                    .as_ref()
+                    .map_or(String::from("[]"), |jv| jv.to_string());
+                let authors: Vec<Author> = serde_json::from_str(&authors_json).unwrap();
+
+                let book = Book {
+                    book_id: row.book_id,
+                    authors,
+                    title: row.title.unwrap_or_default(),
+                    language: row.language_name.unwrap_or_default(),
+                    downloads: row.downloads.unwrap_or_default(),
+                    bookshelves: Some(bookshelves),
+                    subjects: Some(subjects),
+                    category: row.category.unwrap_or_default(),
+                    content_url: row.content_url,
+                    cover_image_url_small: row.cover_image_url_small,
+                    cover_image_url_medium: row.cover_image_url_medium,
+                };
+                books.push(book);
+            }
+
+            HttpResponse::Ok().json(books)
+        }
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error occurred{:?}", e)),
+    }
+}
+
+#[get("/authors/{author_id}")]
+pub async fn get_books_from_author(
+    pool: web::Data<PgPool>,
+    path: web::Path<i32>,
+) -> impl Responder {
+    let author_id = path.into_inner();
+    let res = sqlx::query!(
+        r#"
+        SELECT
+        books.book_id,
+        books.title,
+        books.content_url,
+        books.downloads,
+        books.category,
+        books.cover_image_url_medium,
+        books.cover_image_url_small,
+        languages.language_name,
+        COALESCE(
+            (SELECT json_agg(json_build_object('author_id', authors.author_id, 'author_name', authors.author_name, 'year_of_birth', authors.year_of_birth, 'year_of_death', authors.year_of_death)) 
+            FROM books_authors 
+            INNER JOIN authors ON books_authors.author_id = authors.author_id 
+            WHERE books.book_id = books_authors.book_id), '[]') AS authors,
+        COALESCE(
+            (SELECT json_agg(json_build_object('subject_id', s.subject_id, 'subject_name', s.subject_name)) 
+            FROM 
+                (SELECT DISTINCT subjects.subject_id, subjects.subject_name 
+                FROM books_subjects 
+                INNER JOIN subjects ON books_subjects.subject_id = subjects.subject_id 
+                WHERE books.book_id = books_subjects.book_id) AS s), '[]') AS subjects,
+        COALESCE(
+            (SELECT json_agg(json_build_object('shelf_id', b.shelf_id, 'shelf_name', b.shelf_name)) 
+            FROM 
+                (SELECT DISTINCT bookshelves.shelf_id, bookshelves.shelf_name 
+                FROM books_bookshelves 
+                INNER JOIN bookshelves ON books_bookshelves.shelf_id = bookshelves.shelf_id 
+                WHERE books.book_id = books_bookshelves.book_id) AS b), '[]') AS bookshelves
+        FROM 
+            books
+        INNER JOIN
+            languages ON books.language_id = languages.language_id
+        LEFT JOIN
+            books_authors ON books.book_id = books_authors.book_id
+        WHERE books_authors.author_id = $1
+        GROUP BY
+            books.book_id,
+            languages.language_name
+        ORDER BY
+            books.downloads DESC;
+        "#, author_id
+    ).fetch_all(&**pool).await;
+
+    match res {
+        Ok(rows) => {
+            let mut books: Vec<Book> = Vec::new();
+
+            for row in rows {
+                let subjects_json = row
+                    .subjects
+                    .as_ref()
+                    .map_or(String::from("[]"), |jv| jv.to_string());
+                let subjects: Vec<Subject> = serde_json::from_str(&subjects_json).unwrap();
+
+                let bookshelves_json = row
+                    .bookshelves
+                    .as_ref()
+                    .map_or(String::from("[]"), |jv| jv.to_string());
+                let bookshelves: Vec<Bookshelf> = serde_json::from_str(&bookshelves_json).unwrap();
+
+                let authors_json = row
+                    .authors
+                    .as_ref()
+                    .map_or(String::from("[]"), |jv| jv.to_string());
+                let authors: Vec<Author> = serde_json::from_str(&authors_json).unwrap();
+
+                let book = Book {
+                    book_id: row.book_id,
+                    authors,
+                    title: row.title.unwrap_or_default(),
+                    language: row.language_name.unwrap_or_default(),
+                    downloads: row.downloads.unwrap_or_default(),
+                    bookshelves: Some(bookshelves),
+                    subjects: Some(subjects),
+                    category: row.category.unwrap_or_default(),
+                    content_url: row.content_url,
+                    cover_image_url_small: row.cover_image_url_small,
+                    cover_image_url_medium: row.cover_image_url_medium,
+                };
+                books.push(book);
+            }
+
+            HttpResponse::Ok().json(books)
+        }
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error occurred{:?}", e)),
+    }
+}
