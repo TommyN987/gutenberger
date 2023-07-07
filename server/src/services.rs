@@ -1,7 +1,4 @@
-use std::collections::HashMap;
-
-use model::book::{Author, Book, Bookshelf, Subject};
-use model::utils;
+use model::book::{Analytics, Author, Book, Bookshelf, Subject};
 
 use actix_web::{get, web, HttpResponse, Responder};
 use sqlx::PgPool;
@@ -86,6 +83,7 @@ pub async fn get_top_ten_books(pool: web::Data<PgPool>) -> impl Responder {
                     content_url: row.content_url,
                     cover_image_url_small: row.cover_image_url_small,
                     cover_image_url_medium: row.cover_image_url_medium,
+                    analytics: None,
                 };
                 books.push(book);
             }
@@ -142,7 +140,13 @@ pub async fn get_book(pool: web::Data<PgPool>, path: web::Path<i64>) -> impl Res
 
     match res {
         Ok(res) => {
-            println!("{:?}", res);
+            let content = reqwest::get(res.content_url.as_ref().unwrap())
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+
             let subjects_json = res
                 .subjects
                 .as_ref()
@@ -173,6 +177,7 @@ pub async fn get_book(pool: web::Data<PgPool>, path: web::Path<i64>) -> impl Res
                 content_url: res.content_url,
                 cover_image_url_small: res.cover_image_url_small,
                 cover_image_url_medium: res.cover_image_url_medium,
+                analytics: Some(Analytics::new(&content)),
             };
 
             HttpResponse::Ok().json(book)
@@ -335,6 +340,7 @@ pub async fn get_books_from_bookshelf(
                     content_url: row.content_url,
                     cover_image_url_small: row.cover_image_url_small,
                     cover_image_url_medium: row.cover_image_url_medium,
+                    analytics: None,
                 };
                 books.push(book);
             }
@@ -428,6 +434,7 @@ pub async fn get_books_of_subject(pool: web::Data<PgPool>, path: web::Path<i32>)
                     content_url: row.content_url,
                     cover_image_url_small: row.cover_image_url_small,
                     cover_image_url_medium: row.cover_image_url_medium,
+                    analytics: None,
                 };
                 books.push(book);
             }
@@ -524,6 +531,7 @@ pub async fn get_books_from_author(
                     content_url: row.content_url,
                     cover_image_url_small: row.cover_image_url_small,
                     cover_image_url_medium: row.cover_image_url_medium,
+                    analytics: None,
                 };
                 books.push(book);
             }
