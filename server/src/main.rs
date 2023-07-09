@@ -1,3 +1,4 @@
+use actix_cors::Cors;
 use actix_web::{web::Data, App, HttpServer};
 use dotenv::dotenv;
 use services::{
@@ -23,7 +24,10 @@ async fn main() -> std::io::Result<()> {
         .expect("Error building a connection pool");
 
     HttpServer::new(move || {
+        let cors = Cors::permissive();
+
         App::new()
+            .wrap(cors)
             .app_data(Data::new(pool.clone()))
             .service(get_top_ten_books)
             .service(get_book)

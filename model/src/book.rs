@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+//use sqlx::FromRow;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::stop_words::is_stopword;
@@ -22,7 +22,7 @@ use crate::stop_words::is_stopword;
 //     pub shelf_name: Option<String>,
 // }
 
-#[derive(Deserialize, Serialize, PartialEq, Clone, FromRow, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Clone, Debug)]
 pub struct Author {
     pub author_id: i32,
     pub author_name: String,
@@ -30,25 +30,25 @@ pub struct Author {
     pub year_of_death: Option<f64>,
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Clone, FromRow, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Clone, Debug)]
 pub struct Subject {
     pub subject_name: String,
     pub subject_id: i32,
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Clone, FromRow, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Clone, Debug)]
 pub struct Bookshelf {
     pub shelf_name: String,
     pub shelf_id: i32,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Clone, Debug)]
 pub struct Analytics {
     pub word_map: HashMap<String, u32>,
     pub sorted_words: Vec<(String, u32)>,
 }
 
-#[derive(Deserialize, Serialize, FromRow, Default, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Clone, Default, Debug)]
 pub struct Book {
     pub book_id: i64,
     pub authors: Vec<Author>,
