@@ -140,12 +140,12 @@ pub async fn get_book(pool: web::Data<PgPool>, path: web::Path<i64>) -> impl Res
 
     match res {
         Ok(res) => {
-            let content = reqwest::get(res.content_url.as_ref().unwrap())
+            let content: String = reqwest::get(res.content_url.as_ref().unwrap())
                 .await
                 .unwrap()
                 .text()
                 .await
-                .unwrap();
+                .unwrap_or_default();
 
             let subjects_json = res
                 .subjects

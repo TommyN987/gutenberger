@@ -33,7 +33,7 @@ async fn main() -> std::io::Result<()> {
             .service(get_books_of_subject)
             .service(get_books_from_author)
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("127.0.0.1", 8040))?
     .run()
     .await
 }
