@@ -1,5 +1,5 @@
 use crate::components::home::card::Card;
-use model::book::Book;
+use model::book::{Book, Subject};
 
 use gloo::console::log;
 use wasm_bindgen_futures::spawn_local;
